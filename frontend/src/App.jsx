@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import api, { getImageUrl } from "./services/api";
-import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import MapSection from "./components/MapSection";
 import "./styles/App.css";
 import "./styles/admin.css";
 import "./styles/admin-catalogue.css";
@@ -37,11 +36,12 @@ function App() {
   );
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState("login");
-  const [showAdmin, setShowAdmin] = useState(false);
   const [pendingPlace, setPendingPlace] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
+    if (window.location.pathname !== "/") return;
+
     async function loadPlaces() {
       try {
         const response = await api.get("/places", { params: { radius: 25 } });
@@ -72,10 +72,10 @@ function App() {
     return () => window.removeEventListener("pageshow", guardRestoredPage);
   }, []);
 
+  const query = search.toLowerCase();
   const filteredPlaces = places.filter((place) => {
     const matchesCategory =
       selectedCategory === "All" || place.category === selectedCategory;
-    const query = search.toLowerCase();
     return (
       matchesCategory &&
       (!query ||
@@ -437,56 +437,7 @@ function App() {
             onClear={() => setPlanResult(null)}
           />
         )}
-        <section className="map-section" id="map" aria-labelledby="map-title">
-          <div className="map-intro">
-            <p className="eyebrow">GET YOUR BEARINGS</p>
-            <h2 id="map-title">
-              Everything is closer
-              <br />
-              <em>than you think.</em>
-            </h2>
-            <p>
-              Explore places around Sammanthurai, from local markets and mosques
-              to beaches, heritage sites and farmland views.
-            </p>
-            <a
-              href="https://www.openstreetmap.org/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open full map ↗
-            </a>
-          </div>
-          <MapContainer
-            className="map"
-            center={[7.4744, 81.7964]}
-            zoom={11}
-            scrollWheelZoom={false}
-          >
-            <TileLayer
-              attribution="&copy; OpenStreetMap contributors"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {places.map((place) => (
-              <CircleMarker
-                key={place.id}
-                center={place.coordinates}
-                pathOptions={{
-                  color: "#0f766e",
-                  fillColor: "#0f766e",
-                  fillOpacity: 0.9,
-                }}
-                radius={8}
-              >
-                <Popup>
-                  <strong>{place.name}</strong>
-                  <br />
-                  {place.category} · {place.distanceFromHome} km
-                </Popup>
-              </CircleMarker>
-            ))}
-          </MapContainer>
-        </section>
+        <MapSection places={places} />
       </main>
 
       <footer>
@@ -517,14 +468,6 @@ function App() {
           onClose={() => setShowAuth(false)}
         />
       )}
-      {showAdmin && (
-        <AdminModal
-          token={localStorage.getItem("quiktrail-token")}
-          places={places}
-          onPlacesChange={setPlaces}
-          onClose={() => setShowAdmin(false)}
-        />
-      )}
     </div>
   );
 }
@@ -542,7 +485,12 @@ function PlaceCard({ place, index, isPlanned, onTogglePlan, onOpen }) {
         aria-label={`View ${place.name}`}
       >
         {place.images?.[0] ? (
-          <img src={getImageUrl(place.images[0])} alt="" />
+          <img
+            src={getImageUrl(place.images[0])}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
           <span>{place.emoji}</span>
         )}
@@ -596,6 +544,8 @@ function PlaceModal({ place, isPlanned, onTogglePlan, onClose }) {
                 key={image}
                 src={getImageUrl(image)}
                 alt={`${place.name} view`}
+                loading="lazy"
+                decoding="async"
               />
             ))}
           </div>
@@ -882,249 +832,6 @@ function AuthModal({ mode, onModeChange, onSuccess, onClose }) {
             : "Already registered? Sign in"}
         </button>
       </form>
-    </div>
-  );
-}
-
-function AdminModal({ token, places, onPlacesChange, onClose }) {
-  const [editingId, setEditingId] = useState(null);
-  const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    category: "Natural",
-    description: "",
-    location: "",
-    openingTime: "06:00",
-    closingTime: "18:00",
-    duration: 60,
-    entryFee: "Free",
-  });
-
-  function updateField(event) {
-    setForm((current) => ({
-      ...current,
-      [event.target.name]: event.target.value,
-    }));
-  }
-  function editPlace(place) {
-    setEditingId(place.id);
-    setForm({
-      name: place.name,
-      category: place.category,
-      description: place.description,
-      location: place.location,
-      openingTime: place.openingTime,
-      closingTime: place.closingTime,
-      duration: place.duration,
-      entryFee: place.entryFee,
-    });
-  }
-
-  async function savePlace(event) {
-    event.preventDefault();
-    try {
-      const response = await api({
-        method: editingId ? "put" : "post",
-        url: editingId ? `/admin/places/${editingId}` : "/admin/places",
-        data: form,
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      onPlacesChange((current) =>
-        editingId
-          ? current.map((place) =>
-              place.id === editingId ? response.data : place,
-            )
-          : [...current, response.data],
-      );
-      setEditingId(null);
-      setForm({
-        name: "",
-        category: "Natural",
-        description: "",
-        location: "",
-        openingTime: "06:00",
-        closingTime: "18:00",
-        duration: 60,
-        entryFee: "Free",
-      });
-      setError("");
-    } catch (requestError) {
-      setError(requestError.response?.data?.message || "Unable to save place.");
-    }
-  }
-
-  async function removePlace(id) {
-    if (!window.confirm("Remove this place from the catalogue?")) return;
-    try {
-      await api.delete(`/admin/places/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      onPlacesChange((current) => current.filter((place) => place.id !== id));
-    } catch (requestError) {
-      setError(
-        requestError.response?.data?.message || "Unable to remove place.",
-      );
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="admin-modal"
-        role="dialog"
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="admin-heading">
-          <div>
-            <p className="eyebrow">ADMINISTRATION</p>
-            <h2>Manage places</h2>
-          </div>
-          <button
-            className="close-button"
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div className="admin-layout">
-          <form className="admin-form" onSubmit={savePlace}>
-            <h3>{editingId ? "Edit place" : "Add a place"}</h3>
-            <label>
-              Name
-              <input
-                name="name"
-                value={form.name}
-                onChange={updateField}
-                required
-              />
-            </label>
-            <label>
-              Category
-              <select
-                name="category"
-                value={form.category}
-                onChange={updateField}
-              >
-                {categories.slice(1).map((category) => (
-                  <option key={category}>{category}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Description
-              <textarea
-                name="description"
-                value={form.description}
-                onChange={updateField}
-                rows="3"
-                required
-              />
-            </label>
-            <label>
-              Location
-              <input
-                name="location"
-                value={form.location}
-                onChange={updateField}
-                required
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                Opens
-                <input
-                  name="openingTime"
-                  type="time"
-                  value={form.openingTime}
-                  onChange={updateField}
-                  required
-                />
-              </label>
-              <label>
-                Closes
-                <input
-                  name="closingTime"
-                  type="time"
-                  value={form.closingTime}
-                  onChange={updateField}
-                  required
-                />
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Visit minutes
-                <input
-                  name="duration"
-                  type="number"
-                  min="15"
-                  value={form.duration}
-                  onChange={updateField}
-                  required
-                />
-              </label>
-              <label>
-                Entry fee
-                <input
-                  name="entryFee"
-                  value={form.entryFee}
-                  onChange={updateField}
-                  required
-                />
-              </label>
-            </div>
-            {error && (
-              <div className="form-error" role="alert">
-                {error}
-              </div>
-            )}
-            <button className="primary-button" type="submit">
-              {editingId ? "Update place" : "Add place"}
-            </button>
-            {editingId && (
-              <button
-                className="switch-auth"
-                type="button"
-                onClick={() => setEditingId(null)}
-              >
-                Cancel editing
-              </button>
-            )}
-          </form>
-          <div className="admin-list">
-            <div className="admin-list-header">
-              <h3>
-                Catalogue <span>{places.length}</span>
-              </h3>
-              <small>Visitor data source</small>
-            </div>
-            {places.map((place) => (
-              <div className="admin-place" key={place.id}>
-                <span>{place.emoji}</span>
-                <div>
-                  <b>{place.name}</b>
-                  <small>
-                    {place.category} · {place.distanceFromHome} km
-                  </small>
-                </div>
-                <button type="button" onClick={() => editPlace(place)}>
-                  Edit
-                </button>
-                <button
-                  className="danger-button"
-                  type="button"
-                  onClick={() => removePlace(place.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1773,6 +1480,8 @@ function AdminPlaces({ places, setPlaces, headers, onDelete }) {
                   className="admin-thumb"
                   src={getImageUrl(place.images[0])}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
                 />
               ) : (
                 place.emoji
