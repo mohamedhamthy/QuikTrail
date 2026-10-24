@@ -521,9 +521,13 @@ function PlaceCard({ place, index, isPlanned, onTogglePlan, onOpen }) {
 
 function PlaceModal({ place, isPlanned, onTogglePlan, onClose }) {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="presentation"
+      onClick={onClose}
+    >
       <div
-        className="modal detail-modal"
+        className="modal detail-modal max-h-[90vh] overflow-y-auto p-4 space-y-3"
         role="dialog"
         aria-modal="true"
         aria-labelledby="place-modal-title"
@@ -538,7 +542,7 @@ function PlaceModal({ place, isPlanned, onTogglePlan, onClose }) {
           ×
         </button>
         {place.images?.length > 0 ? (
-          <div className="photo-strip">
+          <div className="photo-strip h-36">
             {place.images.map((image) => (
               <img
                 key={image}
