@@ -5,6 +5,7 @@
 - `frontend/src/main.jsx`: Vite and React bootstrap
 - `frontend/src/App.jsx`: application composition and page state
 - `frontend/src/services/api.js`: shared Axios client for `/api` requests
+- `frontend/public/images/`: fixed images served directly by the frontend
 - `frontend/src/constants/categories.js`: shared place-category configuration
 - `frontend/src/styles/`: global, application, and admin styles
 - `frontend/src/components/`: reserved boundary for extracting reusable UI components
@@ -32,3 +33,6 @@ npm run dev
 ```
 
 The frontend Vite proxy forwards `/api` requests to `http://localhost:5000`.
+Committed fixed images are served from `/images/` by the frontend deployment;
+new images uploaded through the admin interface continue to use the backend's
+`/api/uploads/` endpoint.

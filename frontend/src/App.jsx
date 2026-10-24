@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api from "./services/api";
+import api, { getImageUrl } from "./services/api";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "./styles/App.css";
@@ -542,7 +542,7 @@ function PlaceCard({ place, index, isPlanned, onTogglePlan, onOpen }) {
         aria-label={`View ${place.name}`}
       >
         {place.images?.[0] ? (
-          <img src={place.images[0]} alt="" />
+          <img src={getImageUrl(place.images[0])} alt="" />
         ) : (
           <span>{place.emoji}</span>
         )}
@@ -592,7 +592,11 @@ function PlaceModal({ place, isPlanned, onTogglePlan, onClose }) {
         {place.images?.length > 0 ? (
           <div className="photo-strip">
             {place.images.map((image) => (
-              <img key={image} src={image} alt={`${place.name} view`} />
+              <img
+                key={image}
+                src={getImageUrl(image)}
+                alt={`${place.name} view`}
+              />
             ))}
           </div>
         ) : (
@@ -1765,7 +1769,11 @@ function AdminPlaces({ places, setPlaces, headers, onDelete }) {
           <div className="admin-row" key={place.id}>
             <span>
               {place.images?.length ? (
-                <img className="admin-thumb" src={place.images[0]} alt="" />
+                <img
+                  className="admin-thumb"
+                  src={getImageUrl(place.images[0])}
+                  alt=""
+                />
               ) : (
                 place.emoji
               )}
