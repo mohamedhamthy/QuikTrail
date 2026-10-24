@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const fs = require('fs')
 const path = require('path')
-const { UserModel, PlaceModel, ItineraryModel } = require('./models')
+const { UserModel, PlaceModel, ItineraryModel, ReviewModel, SettingModel } = require('./models')
 const { connectDatabase } = require('./config/database')
 const healthRouter = require('./routes/health')
 
@@ -66,6 +66,49 @@ const users = []
 const itineraries = []
 const reviews = []
 const settings = { homeCoordinates, paceMultipliers: { Relaxed: 1.25, Balanced: 1, Fast: 0.8 }, categories: ['Natural', 'Religious', 'Heritage & Cultural', 'Recreational', 'Restaurants & Dining', 'Coastal Landmark', 'Useful Junctions & Hubs'], notificationsEnabled: true, features: { reviews: true, savedPlans: true } }
+let databaseConnected = false
+
+function normalizeMongoDocument({ _id, __v, ...record }) {
+  return { ...record, id: record.id || String(_id) }
+}
+
+async function persistRecord(Model, record) {
+  if (databaseConnected) {
+    await Model.findOneAndUpdate(
+      { id: record.id },
+      { $set: record },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    )
+  }
+}
+
+async function loadDatabaseRecords(adminEmail, adminPassword) {
+  if (await PlaceModel.countDocuments() === 0) await PlaceModel.insertMany(places)
+  const storedPlaces = (await PlaceModel.find().lean()).map(normalizeMongoDocument)
+  places.splice(0, places.length, ...storedPlaces)
+
+  const storedSettings = await SettingModel.findOne({ key: 'global' }).lean()
+  if (storedSettings?.value) Object.assign(settings, storedSettings.value)
+  else await SettingModel.create({ key: 'global', value: settings })
+
+  if (!(await UserModel.exists({ email: adminEmail }))) {
+    await UserModel.create({
+      id: 'admin-1',
+      name: 'QuikTrail Administrator',
+      email: adminEmail,
+      password: await bcrypt.hash(adminPassword, 10),
+      role: 'admin',
+    })
+  }
+  const storedUsers = (await UserModel.find().lean()).map(normalizeMongoDocument)
+  users.splice(0, users.length, ...storedUsers)
+
+  const storedItineraries = (await ItineraryModel.find().lean()).map(normalizeMongoDocument)
+  itineraries.splice(0, itineraries.length, ...storedItineraries)
+
+  const storedReviews = (await ReviewModel.find().lean()).map(normalizeMongoDocument)
+  reviews.splice(0, reviews.length, ...storedReviews)
+}
 
 function createToken(user) {
   return jwt.sign({ id: user.id, name: user.name, email: user.email, role: user.role }, jwtSecret, { expiresIn: '2d' })
@@ -100,6 +143,7 @@ app.post('/api/auth/register', async (request, response) => {
   const normalizedEmail = email.trim().toLowerCase()
   if (users.some((user) => user.email === normalizedEmail)) return response.status(409).json({ message: 'An account with this email already exists.' })
   const user = { id: `user-${Date.now()}`, name: name.trim(), email: normalizedEmail, password: await bcrypt.hash(password, 10), role: 'visitor' }
+  if (databaseConnected) await UserModel.create(user)
   users.push(user)
   return response.status(201).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role }, token: createToken(user) })
 })
@@ -145,30 +189,33 @@ app.post('/api/admin/uploads', verifyToken, requireAdminRole, (request, response
   return response.status(201).json({ url: `/api/uploads/${storedName}` })
 })
 
-app.post('/api/admin/places', verifyToken, requireAdminRole, (request, response) => {
+app.post('/api/admin/places', verifyToken, requireAdminRole, async (request, response) => {
   const place = { emoji: '📍', color: 'blue', facilities: [], bestVisitTime: 'Daytime', travelTips: 'Check local conditions before visiting.', culturalEtiquette: 'Respect local people, places and surroundings.', ...request.body, id: `place-${Date.now()}`, isActive: request.body.isActive !== false, coordinates: request.body.coordinates || homeCoordinates, distanceFromHome: Number(haversineDistance(homeCoordinates, request.body.coordinates || homeCoordinates).toFixed(1)) }
   if (!place.name || !place.category || !place.description) return response.status(400).json({ message: 'Name, category, and description are required.' })
+  if (databaseConnected) await PlaceModel.create(place)
   places.push(place)
   return response.status(201).json(place)
 })
 
-app.put('/api/admin/places/:id', verifyToken, requireAdminRole, (request, response) => {
+app.put('/api/admin/places/:id', verifyToken, requireAdminRole, async (request, response) => {
   const placeIndex = places.findIndex((item) => item.id === request.params.id)
   if (placeIndex === -1) return response.status(404).json({ message: 'Place not found.' })
   const updatedPlace = { ...places[placeIndex], ...request.body }
   if (request.body.coordinates) updatedPlace.distanceFromHome = Number(haversineDistance(homeCoordinates, request.body.coordinates).toFixed(1))
+  if (databaseConnected) await persistRecord(PlaceModel, updatedPlace)
   places[placeIndex] = updatedPlace
   return response.json(updatedPlace)
 })
 
-app.delete('/api/admin/places/:id', verifyToken, requireAdminRole, (request, response) => {
+app.delete('/api/admin/places/:id', verifyToken, requireAdminRole, async (request, response) => {
   const placeIndex = places.findIndex((item) => item.id === request.params.id)
   if (placeIndex === -1) return response.status(404).json({ message: 'Place not found.' })
+  if (databaseConnected) await PlaceModel.deleteOne({ id: request.params.id })
   places.splice(placeIndex, 1)
   return response.json({ message: 'Place removed successfully.' })
 })
 
-app.post('/api/plans', verifyToken, (request, response, next) => {
+app.post('/api/plans', verifyToken, async (request, response) => {
   const { name, date, startTime = '08:00', pace = 'Balanced', places: selectedIds = [] } = request.body
   if (!name || !date || selectedIds.length === 0) return response.status(400).json({ message: 'A plan name, date, and at least one place are required.' })
   const selectedPlaces = selectedIds.map((id) => places.find((place) => place.id === id)).filter(Boolean)
@@ -181,37 +228,46 @@ app.post('/api/plans', verifyToken, (request, response, next) => {
   const expectedEndTime = end.toTimeString().slice(0, 5)
   const warnings = selectedPlaces.filter((place) => startTime < place.openingTime || startTime > place.closingTime).map((place) => `${place.name} may be outside its visiting hours.`)
   const result = { id: `plan-${Date.now()}`, name, date, startTime, pace, places: selectedPlaces, routeOrder: selectedPlaces.map((place) => place.id), totalDistance: Number(totalDistance.toFixed(1)), totalVisitMinutes, totalTravelMinutes, expectedEndTime, warnings, message: 'Trip plan created successfully.' }
-  itineraries.push({ ...result, userId: request.user.id, createdAt: new Date().toISOString() })
+  const itinerary = { ...result, userId: request.user.id, createdAt: new Date().toISOString() }
+  if (databaseConnected) await ItineraryModel.create(itinerary)
+  itineraries.push(itinerary)
   return response.status(201).json(result)
 })
 
 app.get('/api/plans', verifyToken, (request, response) => response.json(itineraries.filter((plan) => plan.userId === request.user.id)))
 
-app.post('/api/places/:id/reviews', verifyToken, (request, response) => {
+app.post('/api/places/:id/reviews', verifyToken, async (request, response) => {
   const { rating, comment = '' } = request.body
   if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) return response.status(400).json({ message: 'Rating must be an integer from 1 to 5.' })
   const review = { id: `review-${Date.now()}`, placeId: request.params.id, userId: request.user.id, rating: Number(rating), comment, createdAt: new Date().toISOString() }
+  if (databaseConnected) await ReviewModel.create(review)
   reviews.push(review)
   return response.status(201).json(review)
 })
 
 app.get('/api/admin/settings', verifyToken, requireAdminRole, (request, response) => response.json(settings))
-app.put('/api/admin/settings', verifyToken, requireAdminRole, (request, response) => {
+app.put('/api/admin/settings', verifyToken, requireAdminRole, async (request, response) => {
   const { homeCoordinates: nextHome, paceMultipliers, categories, notificationsEnabled, features } = request.body
   if (nextHome) settings.homeCoordinates = nextHome
   if (paceMultipliers) settings.paceMultipliers = { ...settings.paceMultipliers, ...paceMultipliers }
   if (Array.isArray(categories)) settings.categories = categories
   if (typeof notificationsEnabled === 'boolean') settings.notificationsEnabled = notificationsEnabled
   if (features) settings.features = { ...settings.features, ...features }
+  if (databaseConnected) await SettingModel.findOneAndUpdate(
+    { key: 'global' },
+    { $set: { value: settings } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
   return response.json(settings)
 })
 
 app.get('/api/admin/users', verifyToken, requireAdminRole, (request, response) => response.json(users.map(({ password, ...user }) => ({ ...user, itineraryCount: itineraries.filter((plan) => plan.userId === user.id).length }))))
-app.patch('/api/admin/users/:id', verifyToken, requireAdminRole, (request, response) => {
+app.patch('/api/admin/users/:id', verifyToken, requireAdminRole, async (request, response) => {
   const user = users.find((item) => item.id === request.params.id)
   if (!user) return response.status(404).json({ message: 'User not found.' })
   if (request.body.role && ['visitor', 'admin'].includes(request.body.role)) user.role = request.body.role
   if (typeof request.body.isActive === 'boolean') user.isActive = request.body.isActive
+  if (databaseConnected) await persistRecord(UserModel, user)
   const { password, ...safeUser } = user
   return response.json(safeUser)
 })
@@ -220,9 +276,18 @@ app.get('/api/admin/itineraries', verifyToken, requireAdminRole, (request, respo
 async function startServer() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@quiktrail.local'
   const adminPassword = process.env.ADMIN_PASSWORD || 'QuikTrail@123'
-  if (!users.some((user) => user.email === adminEmail)) users.push({ id: 'admin-1', name: 'QuikTrail Administrator', email: adminEmail, password: await bcrypt.hash(adminPassword, 10), role: 'admin' })
-  await connectDatabase()
-  if (!process.env.MONGODB_URI) console.log(`Admin login: ${adminEmail} / ${adminPassword}`)
+  databaseConnected = await connectDatabase()
+  if (process.env.MONGODB_URI && !databaseConnected) {
+    throw new Error('MongoDB is configured but unavailable; refusing to start with in-memory data.')
+  }
+  if (databaseConnected) {
+    await loadDatabaseRecords(adminEmail, adminPassword)
+  } else {
+    if (!users.some((user) => user.email === adminEmail)) {
+      users.push({ id: 'admin-1', name: 'QuikTrail Administrator', email: adminEmail, password: await bcrypt.hash(adminPassword, 10), role: 'admin' })
+    }
+    console.log(`Admin login: ${adminEmail} / ${adminPassword}`)
+  }
   app.listen(port, () => console.log(`QuikTrail API running at http://localhost:${port}`))
 }
 

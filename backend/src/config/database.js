@@ -11,7 +11,10 @@ async function connectDatabase() {
     console.log('Connected to MongoDB')
     return true
   } catch (error) {
-    console.error('MongoDB connection failed:', error.message)
+    const safeMessage = error.message
+      .replace(process.env.MONGODB_URI, '[redacted MongoDB URI]')
+      .replace(/mongodb(?:\+srv)?:\/\/[^@\s]+@/gi, 'mongodb+srv://[redacted]@')
+    console.error('MongoDB connection failed:', error.name, safeMessage)
     return false
   }
 }
