@@ -18,7 +18,7 @@ const maximumRadiusKm = 25
 const jwtSecret = process.env.JWT_SECRET || 'quiktrail-development-secret'
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '7mb' }))
 const uploadsDirectory = path.join(__dirname, '..', 'uploads')
 fs.mkdirSync(uploadsDirectory, { recursive: true })
 app.use('/api/uploads', express.static(uploadsDirectory))

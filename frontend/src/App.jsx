@@ -7,6 +7,17 @@ import "./styles/admin.css";
 import "./styles/admin-catalogue.css";
 import "./styles/motion.css";
 import { categories } from "./constants/categories";
+import {
+  ArrowUpRight,
+  Check,
+  Clock3,
+  MapPin,
+  Menu,
+  Moon,
+  Search,
+  Sun,
+  X,
+} from "lucide-react";
 
 function App() {
   const [places, setPlaces] = useState([]);
@@ -28,6 +39,7 @@ function App() {
   const [authMode, setAuthMode] = useState("login");
   const [showAdmin, setShowAdmin] = useState(false);
   const [pendingPlace, setPendingPlace] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function loadPlaces() {
@@ -202,7 +214,7 @@ function App() {
             onClick={() => setDarkMode((value) => !value)}
             aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`}
           >
-            {darkMode ? "☀" : "☾"}
+            {darkMode ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           {user ? (
             <div className="account-menu">
@@ -241,6 +253,67 @@ function App() {
             </button>
           )}
         </div>
+        <button
+          className="mobile-menu-toggle"
+          type="button"
+          aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-navigation"
+          onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
+        >
+          {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
+        </button>
+        {mobileMenuOpen && (
+          <nav
+            className="mobile-navigation"
+            id="mobile-navigation"
+            aria-label="Mobile navigation"
+          >
+            <a href="#discover" onClick={() => setMobileMenuOpen(false)}>
+              Discover
+            </a>
+            <a href="#map" onClick={() => setMobileMenuOpen(false)}>
+              Map
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                user ? setShowPlanner(true) : requestAuth();
+              }}
+            >
+              My trail <span>{plan.length}</span>
+            </button>
+            {user?.role === "admin" && (
+              <a href="/admin" onClick={() => setMobileMenuOpen(false)}>
+                Admin dashboard
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setDarkMode((value) => !value)}
+            >
+              {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+              {darkMode ? "Light mode" : "Dark mode"}
+            </button>
+            {user ? (
+              <button type="button" onClick={logout}>
+                Sign out
+              </button>
+            ) : (
+              <button
+                className="mobile-sign-in"
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  requestAuth();
+                }}
+              >
+                Sign in
+              </button>
+            )}
+          </nav>
+        )}
       </header>
 
       <main id="discover">
@@ -255,14 +328,23 @@ function App() {
               plan a day around the Eastern Province.
             </p>
             <div className="search-box">
-              <span aria-hidden="true">⌕</span>
+              <Search size={19} aria-hidden="true" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search places, food, or experiences"
                 aria-label="Search places"
               />
-              <kbd>/</kbd>
+              {search && (
+                <button
+                  className="search-clear"
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                >
+                  <X size={17} />
+                </button>
+              )}
             </div>
             <div className="hero-stats">
               <span>
@@ -275,7 +357,7 @@ function App() {
           </div>
           <div
             className="hero-art"
-            aria-label="Illustration of a Sammanthurai landscape"
+            aria-label="Sunset over an agricultural landscape"
             role="img"
           >
             <div className="sun"></div>
@@ -304,6 +386,8 @@ function App() {
             {categories.map((category) => (
               <button
                 key={category}
+                role="tab"
+                aria-selected={selectedCategory === category}
                 className={
                   selectedCategory === category ? "category active" : "category"
                 }
@@ -388,8 +472,8 @@ function App() {
                 key={place.id}
                 center={place.coordinates}
                 pathOptions={{
-                  color: "#ef7e5c",
-                  fillColor: "#ef7e5c",
+                  color: "#0f766e",
+                  fillColor: "#0f766e",
                   fillOpacity: 0.9,
                 }}
                 radius={8}
@@ -463,17 +547,16 @@ function PlaceCard({ place, index, isPlanned, onTogglePlan, onOpen }) {
           <span>{place.emoji}</span>
         )}
         <small>{place.category}</small>
-        <i>↗</i>
+        <i aria-hidden="true"><ArrowUpRight size={18} /></i>
       </button>
       <div className="card-body">
         <div className="card-title">
           <h3>{place.name}</h3>
-          <span>{place.distanceFromHome} km</span>
+          <span><MapPin size={13} /> {place.distanceFromHome} km</span>
         </div>
         <p>{place.description}</p>
         <div className="card-meta">
-          <span>◷ {place.duration} min</span>
-          <span>⌖ {place.bestVisitTime}</span>
+          <span><Clock3 size={13} /> {place.openingTime}–{place.closingTime}</span>
           <strong>{place.entryFee}</strong>
         </div>
         <button
@@ -481,7 +564,7 @@ function PlaceCard({ place, index, isPlanned, onTogglePlan, onOpen }) {
           type="button"
           onClick={onTogglePlan}
         >
-          {isPlanned ? "✓ Added to trail" : "+ Add to my trail"}
+          {isPlanned ? <><Check size={16} /> Added to trail</> : "+ Add to my trail"}
         </button>
       </div>
     </article>
