@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://quiktrail-production.up.railway.app/api/:path*"
+      "destination": "https://quiktrail-m7xg.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
