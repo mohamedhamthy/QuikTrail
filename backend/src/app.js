@@ -29,7 +29,7 @@ function disableProtectedCaching(request, response, next) {
     Pragma: 'no-cache',
     Expires: '0',
   })
-  next()
+  next()    
 }
 
 app.use('/api/admin', disableProtectedCaching)
@@ -82,7 +82,7 @@ async function persistRecord(Model, record) {
   }
 }
 
-async function loadDatabaseRecords(adminEmail, adminPassword) {
+async function loadDatabaseRecords(adminAccounts) {
   if (await PlaceModel.countDocuments() === 0) await PlaceModel.insertMany(places)
   const storedPlaces = (await PlaceModel.find().lean()).map(normalizeMongoDocument)
   places.splice(0, places.length, ...storedPlaces)
@@ -91,15 +91,18 @@ async function loadDatabaseRecords(adminEmail, adminPassword) {
   if (storedSettings?.value) Object.assign(settings, storedSettings.value)
   else await SettingModel.create({ key: 'global', value: settings })
 
-  if (!(await UserModel.exists({ email: adminEmail }))) {
-    await UserModel.create({
-      id: 'admin-1',
-      name: 'QuikTrail Administrator',
-      email: adminEmail,
-      password: await bcrypt.hash(adminPassword, 10),
-      role: 'admin',
-    })
+  for (const [index, admin] of adminAccounts.entries()) {
+    if (!(await UserModel.exists({ email: admin.email }))) {
+      await UserModel.create({
+        id: `admin-${index + 1}`,
+        name: admin.name,
+        email: admin.email,
+        password: await bcrypt.hash(admin.password, 10),
+        role: 'admin',
+      })
+    }
   }
+
   const storedUsers = (await UserModel.find().lean()).map(normalizeMongoDocument)
   users.splice(0, users.length, ...storedUsers)
 
@@ -274,19 +277,33 @@ app.patch('/api/admin/users/:id', verifyToken, requireAdminRole, async (request,
 app.get('/api/admin/itineraries', verifyToken, requireAdminRole, (request, response) => response.json(itineraries))
 
 async function startServer() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@quiktrail.local'
-  const adminPassword = process.env.ADMIN_PASSWORD || 'QuikTrail@123'
+  const adminAccounts = [
+    {
+      name: 'QuikTrail Administrator',
+      email: process.env.ADMIN_EMAIL || 'admin@quiktrail.local',
+      password: process.env.ADMIN_PASSWORD || 'QuikTrail@123',
+    },
+    {
+      name: 'QuikTrail Secondary Administrator',
+      email: process.env.ADMIN_EMAIL_2 || 'admin2@quiktrail.local',
+      password: process.env.ADMIN_PASSWORD_2 || 'QuikTrail@456',
+    },
+  ]
+
   databaseConnected = await connectDatabase()
   if (process.env.MONGODB_URI && !databaseConnected) {
     throw new Error('MongoDB is configured but unavailable; refusing to start with in-memory data.')
   }
   if (databaseConnected) {
-    await loadDatabaseRecords(adminEmail, adminPassword)
+    await loadDatabaseRecords(adminAccounts)
   } else {
-    if (!users.some((user) => user.email === adminEmail)) {
-      users.push({ id: 'admin-1', name: 'QuikTrail Administrator', email: adminEmail, password: await bcrypt.hash(adminPassword, 10), role: 'admin' })
-    }
-    console.log(`Admin login: ${adminEmail} / ${adminPassword}`)
+    adminAccounts.forEach((admin, index) => {
+      if (!users.some((user) => user.email === admin.email)) {
+        users.push({ id: `admin-${index + 1}`, name: admin.name, email: admin.email, password: bcrypt.hashSync(admin.password, 10), role: 'admin' })
+      }
+    })
+    console.log('Admin logins:')
+    adminAccounts.forEach((admin) => console.log(`${admin.email} / ${admin.password}`))
   }
   app.listen(port, () => console.log(`QuikTrail API running at http://localhost:${port}`))
 }
